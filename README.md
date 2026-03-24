@@ -1,5 +1,9 @@
 # 🛠️ Kemmler B2B Offer Builder
 
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](TU_WKLEJ_TWOJ_LINK_DO_APLIKACJI)
+
+An automated tool designed to streamline the quoting process...
+
 An automated tool designed to streamline the quoting process for Kemmler industrial supplies. This application fetches real-time product data and provides an interactive interface for sales teams to manage discounts and generate professional offers.
 
 ## 🚀 Key Features
