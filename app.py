@@ -101,7 +101,7 @@ if uploaded_file:
 if 'data' in st.session_state:
     st.subheader("📋 Edytuj rabaty i weryfikuj dane")
     
-    # Wyświetlamy edytowalną tabelę
+    # Dispaly table
     edited_df = st.data_editor(
         st.session_state.data,
         column_config={
@@ -113,20 +113,19 @@ if 'data' in st.session_state:
         key="editor"
     )
 
-    # Obliczenia końcowe w locie
-    # Cena po rabacie * ilość * kurs NBP
+    #Final Calculation
     edited_df['Total Value PLN'] = (
         edited_df['Base Price EUR'] * (1 - edited_df['Discount %'] / 100) * edited_df['Order Qty'] * st.session_state.tool.exchange_rate
     ).round(2)
 
-    # Podsumowanie pod tabelą
+    # Summary
     total_pln = edited_df['Total Value PLN'].sum()
     st.divider()
     col1, col2 = st.columns(2)
     with col1:
         st.metric("Suma całkowita (PLN)", f"{total_pln:,.2f} PLN")
     
-    # 3. Export do Excel
+    # 3. Export to Excel
     with col2:
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -139,6 +138,6 @@ if 'data' in st.session_state:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
 
-    # Podgląd finalnej tabeli z przeliczoną wartością PLN
+    # Preview
     st.write("Podgląd wartości PLN:")
     st.dataframe(edited_df[['SKU', 'Discount %', 'Total Value PLN']])
