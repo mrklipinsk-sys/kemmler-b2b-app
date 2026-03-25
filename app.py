@@ -7,7 +7,6 @@ import time
 import random
 from io import BytesIO
 
-
 class KemmlerB2BTool:
     def __init__(self):
         self.base_url = "https://www.kemmler-shop.de/en/search" 
@@ -61,16 +60,12 @@ class KemmlerB2BTool:
 
 # --- INTERFEJS STREAMLIT ---
 st.set_page_config(page_title="Kemmler Offer Builder", layout="wide")
-
 st.title("🛠️ Kemmler B2B Offer Generator")
 
 if 'tool' not in st.session_state:
     st.session_state.tool = KemmlerB2BTool()
 
-# Sidebar 
-st.sidebar.metric("Kurs EUR (NBP)", f"{st.session_state.tool.exchange_rate} PLN")
-
-uploaded_file = st.file_uploader("Upload inquiry.xlsx (kolumny: sku, qty)", type=["xlsx"])
+uploaded_file = st.file_uploader("Załaduj plik: inquiry.xlsx (kolumny: sku, qty)", type=["xlsx"])
 
 if uploaded_file:
     df_in = pd.read_excel(uploaded_file)
@@ -78,66 +73,131 @@ if uploaded_file:
     if st.button("🔍 Find data"):
         progress_bar = st.progress(0)
         results = []
-        
         sku_dict = dict(zip(df_in["sku"], df_in["qty"]))
         total_items = len(sku_dict)
         
         for i, (sku, qty) in enumerate(sku_dict.items()):
             p, s, w = st.session_state.tool.get_product(sku)
             results.append({
-                'SKU': sku,
-                'Order Qty': qty,
-                'Stock Available': s,
-                'Unit Weight (kg)': w,
-                'Base Price EUR': p,
-                'Discount %': 0.0
+                'Numer produktu': sku,
+                'Ilość': qty,
+                'Ilość na magazynie': s,
+                'Waga [kg]': w,
+                'Cena kat. EUR': p,
+                'Rabat %': 40.0
             })
             progress_bar.progress((i + 1) / total_items)
             time.sleep(random.uniform(0.5, 1.0))
         
         st.session_state.data = pd.DataFrame(results)
 
-# 2. Calculation
+# --- 2. Calculation & Display ---
 if 'data' in st.session_state:
+    raw_rate = st.session_state.tool.exchange_rate
+    final_rate = round(round(raw_rate, 2), 1)
+    
     st.subheader("📋 Edytuj rabaty i weryfikuj dane")
     
-    # Dispaly table
     edited_df = st.data_editor(
         st.session_state.data,
         column_config={
-            "Discount %": st.column_config.NumberColumn("Rabat %", min_value=0, max_value=100, step=1, format="%d%%"),
-            "Base Price EUR": st.column_config.NumberColumn("Cena EUR", format="%.2f €"),
-            "Unit Weight (kg)": st.column_config.NumberColumn("Waga (kg)", format="%.2f kg")
+            "Numer produktu": st.column_config.TextColumn("Produkt (SKU)", width=150),
+            "Ilość": st.column_config.NumberColumn("Zamówienie [szt.]", width=100, format="%d"),
+            "Ilość na magazynie": st.column_config.NumberColumn("Stan mag. [szt]", width=100, format="%d"),
+            "Waga [kg]": st.column_config.NumberColumn("Waga [kg]", width=100, format="%.2f"),
+            "Cena kat. EUR": st.column_config.NumberColumn("Cena EUR", width=120, format="%.2f €"),
+            "Rabat %": st.column_config.NumberColumn(
+                "👉 JAKI RABAT (%)",
+                help="Wpisz wartość rabatu (0-100)", 
+                min_value=0, max_value=100, step=1, format="%d%%", required=True
+            )
         },
-        disabled=["SKU", "Order Qty", "Stock Available", "Unit Weight (kg)", "Base Price EUR"],
+        disabled=["Numer produktu", "Ilość", "Ilość na magazynie", "Waga [kg]", "Cena kat. EUR"],
+        hide_index=True,
+        use_container_width=True, 
         key="editor"
     )
 
-    #Final Calculation
-    edited_df['Total Value PLN'] = (
-        edited_df['Base Price EUR'] * (1 - edited_df['Discount %'] / 100) * edited_df['Order Qty'] * st.session_state.tool.exchange_rate
-    ).round(2)
-
-    # Summary
-    total_pln = edited_df['Total Value PLN'].sum()
-    st.divider()
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Suma całkowita (PLN)", f"{total_pln:,.2f} PLN")
+    # Calculations
+    edited_df['Cena kat. PLN'] = (edited_df['Cena kat. EUR'] * final_rate).round(0)
+    edited_df['Suma PLN'] = (
+        edited_df['Cena kat. EUR'] * (1 - edited_df['Rabat %'] / 100) * edited_df['Ilość'] * final_rate
+    ).round(0)
     
-    # 3. Export to Excel
-    with col2:
+    total_pln = edited_df['Suma PLN'].sum()
+    total_weight = (edited_df['Waga [kg]'] * edited_df['Ilość']).sum()
+
+    if (edited_df['Cena kat. EUR'] == 0).any():
+        st.warning("⚠️ Uwaga: Niektóre produkty mają cenę 0.00!")
+
+    # Final view prep
+    final_view = edited_df[['Numer produktu', 'Ilość', 'Cena kat. EUR', 'Cena kat. PLN', 'Rabat %', 'Suma PLN']].copy()
+    final_view.columns = ['Artykuł', 'Ilość (szt)', 'Cena kat. EUR', 'Cena kat. PLN', 'Rabat %', 'Wartość Netto PLN']
+
+    # --- 3. SIDEBAR ---
+    with st.sidebar:
+        st.markdown("""
+            <div style="text-align: center; padding: 10px;">
+                <a href="https://www.kemmler-tools.de" target="_blank" 
+                   style="text-decoration: none; color: #FFFFFF; background-color: #262730; 
+                          padding: 8px 20px; border-radius: 10px; border: 1px solid #444; 
+                          font-size: 14px; font-weight: 400;">
+                    🌐 Strona Kemmler Tools
+                </a>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.write("---")
+        st.subheader("🏦 Kursy walut")
+        c1, c2 = st.columns(2)
+        c1.metric("Kurs NBP", f"{raw_rate:.4f}")
+        c2.metric("Kurs handlowy", f"{final_rate:.1f}")
+        
+        st.write("---")
+        st.subheader("💰 Podsumowanie")
+        clean_sum = f"{total_pln:,.2f}".replace(',', ' ').replace('.', ',')
+        st.metric("Suma netto", f"{clean_sum} PLN")
+        st.metric("Łączna waga", f"{total_weight:.2f} kg")
+        st.caption(f"Pozycje: {len(final_view)}")
+        
+        st.write("---")
+        st.subheader("📤 Eksport")
+        
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            edited_df.to_excel(writer, index=False, sheet_name='Oferta_Kemmler')
-        
+            final_view.to_excel(writer, index=False, sheet_name='Oferta')
+            workbook  = writer.book
+            worksheet = writer.sheets['Oferta']
+            
+            fmt_pln = workbook.add_format({'num_format': '#,##0.00 "PLN"', 'align': 'right'})
+            fmt_eur = workbook.add_format({'num_format': '#,##0.00 "€"', 'align': 'right'})
+            
+            for i, col in enumerate(final_view.columns):
+                column_len = max(final_view[col].astype(str).map(len).max(), len(col)) + 5
+                if col == 'Cena kat. EUR':
+                    worksheet.set_column(i, i, column_len, fmt_eur)
+                elif col in ['Cena kat. PLN', 'Wartość Netto PLN']:
+                    worksheet.set_column(i, i, column_len, fmt_pln)
+                else:
+                    worksheet.set_column(i, i, column_len)
+
         st.download_button(
-            label="💾 Pobierz Ofertę (Excel)",
+            label="💾 Pobierz Excel",
             data=output.getvalue(),
             file_name=f"Oferta_Kemmler_{time.strftime('%Y%m%d')}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
         )
 
-    # Preview
-    st.write("Podgląd wartości PLN:")
-    st.dataframe(edited_df[['SKU', 'Discount %', 'Total Value PLN']])
+    # --- 4. Offer Preview ---
+    st.write("### 📄 Podgląd dokumentu dla klienta:")
+    st.dataframe(
+        final_view, 
+        column_config={
+            "Cena kat. EUR": st.column_config.NumberColumn("Cena EUR", format="%.2f €"),
+            "Cena kat. PLN": st.column_config.NumberColumn("Cena PLN", format="%.2f PLN"),
+            "Wartość Netto PLN": st.column_config.NumberColumn("Suma PLN", format="%.2f PLN"),
+        },
+        use_container_width=True, 
+        hide_index=True
+    )
