@@ -1,3 +1,18 @@
+"""
+KEMMLER B2B OFFER GENERATOR
+---------------------------
+A Streamlit application designed to automate the quoting process for Kemmler tools.
+
+Key Features:
+1. Web Scraping: Extracts prices, stock levels, and weights directly from the Kemmler shop.
+2. Currency: Automatically fetches the EUR exchange rate via NBP API and calculates a "Commercial Rate".
+3. Logistics: Dynamically calculates shipping costs based on total order weight.
+4. Export: Generates professional Excel offers with currency formatting and totals.
+
+Author: Marek Lipiński
+Version: 1.1 (Logistics & Summaries)
+"""
+
 import streamlit as st
 import pandas as pd
 import requests
@@ -58,7 +73,17 @@ class KemmlerB2BTool:
         except:
             return 0, 0, 0
 
-# --- INTERFEJS STREAMLIT ---
+# --- tRANSPORT---
+def calculate_shipping(weight_kg):
+    if weight_kg == 0: return 0
+    if weight_kg <= 30: return 29.0
+    if weight_kg <= 60: return 38.0
+    if weight_kg <= 90: return 57.0
+    if weight_kg <= 120: return 76.0
+    if weight_kg <= 150: return 95.0
+    return 150.0 
+
+# --- STREAMLIT ---
 st.set_page_config(page_title="Kemmler Offer Builder", layout="wide")
 st.title("🛠️ Kemmler B2B Offer Generator")
 
@@ -105,7 +130,7 @@ if 'data' in st.session_state:
             "Ilość": st.column_config.NumberColumn("Zamówienie [szt.]", width=100, format="%d"),
             "Ilość na magazynie": st.column_config.NumberColumn("Stan mag. [szt]", width=100, format="%d"),
             "Waga [kg]": st.column_config.NumberColumn("Waga [kg]", width=100, format="%.2f"),
-            "Cena kat. EUR": st.column_config.NumberColumn("Cena EUR", width=120, format="%.2f €"),
+            "Cena kat. EUR": st.column_config.NumberColumn("Cena EUR", width=120, format="%.2f"),
             "Rabat %": st.column_config.NumberColumn(
                 "👉 JAKI RABAT (%)",
                 help="Wpisz wartość rabatu (0-100)", 
@@ -118,19 +143,24 @@ if 'data' in st.session_state:
         key="editor"
     )
 
-    # Calculations
+    # Products
     edited_df['Cena kat. PLN'] = (edited_df['Cena kat. EUR'] * final_rate).round(0)
     edited_df['Suma PLN'] = (
         edited_df['Cena kat. EUR'] * (1 - edited_df['Rabat %'] / 100) * edited_df['Ilość'] * final_rate
     ).round(0)
     
-    total_pln = edited_df['Suma PLN'].sum()
+    # Shipping
     total_weight = (edited_df['Waga [kg]'] * edited_df['Ilość']).sum()
+    shipping_eur = calculate_shipping(total_weight)
+    shipping_pln = round(shipping_eur * final_rate, 0)
+    
+    total_netto_pln = edited_df['Suma PLN'].sum()
+    grand_total_pln = total_netto_pln + shipping_pln
 
     if (edited_df['Cena kat. EUR'] == 0).any():
         st.warning("⚠️ Uwaga: Niektóre produkty mają cenę 0.00!")
 
-    # Final view prep
+    # Final View
     final_view = edited_df[['Numer produktu', 'Ilość', 'Cena kat. EUR', 'Cena kat. PLN', 'Rabat %', 'Suma PLN']].copy()
     final_view.columns = ['Artykuł', 'Ilość (szt)', 'Cena kat. EUR', 'Cena kat. PLN', 'Rabat %', 'Wartość Netto PLN']
 
@@ -155,11 +185,8 @@ if 'data' in st.session_state:
         
         st.write("---")
         st.subheader("💰 Podsumowanie")
-        clean_sum = f"{total_pln:,.2f}".replace(',', ' ').replace('.', ',')
-        st.metric("Suma netto", f"{clean_sum} PLN")
-        st.metric("Łączna waga", f"{total_weight:.2f} kg")
-        st.caption(f"Pozycje: {len(final_view)}")
-        
+        st.metric("RAZEM DO ZAPŁATY", f"{grand_total_pln:,.2f} PLN".replace(',', ' ').replace('.', ','))
+   
         st.write("---")
         st.subheader("📤 Eksport")
         
@@ -169,9 +196,11 @@ if 'data' in st.session_state:
             workbook  = writer.book
             worksheet = writer.sheets['Oferta']
             
-            fmt_pln = workbook.add_format({'num_format': '#,##0.00 "PLN"', 'align': 'right'})
-            fmt_eur = workbook.add_format({'num_format': '#,##0.00 "€"', 'align': 'right'})
+            fmt_pln = workbook.add_format({'num_format': '#,##0.00', 'align': 'right'})
+            fmt_eur = workbook.add_format({'num_format': '#,##0.00', 'align': 'right'})
+            fmt_bold = workbook.add_format({'bold': True, 'bg_color': '#D3D3D3', 'num_format': '#,##0.00'})
             
+           
             for i, col in enumerate(final_view.columns):
                 column_len = max(final_view[col].astype(str).map(len).max(), len(col)) + 5
                 if col == 'Cena kat. EUR':
@@ -181,6 +210,14 @@ if 'data' in st.session_state:
                 else:
                     worksheet.set_column(i, i, column_len)
 
+            
+            last_row = len(final_view) + 2
+            worksheet.write(last_row, 0, "Koszt transportu", workbook.add_format({'italic': True}))
+            worksheet.write(last_row, 5, shipping_pln, fmt_pln)
+            
+            worksheet.write(last_row + 1, 0, "SUMA CAŁKOWITA NETTO", workbook.add_format({'bold': True}))
+            worksheet.write(last_row + 1, 5, grand_total_pln, fmt_bold)
+
         st.download_button(
             label="💾 Pobierz Excel",
             data=output.getvalue(),
@@ -189,15 +226,15 @@ if 'data' in st.session_state:
             use_container_width=True
         )
 
-    # --- 4. Offer Preview ---
+    # --- 4. Preview ---
     st.write("### 📄 Podgląd dokumentu dla klienta:")
-    st.dataframe(
-        final_view, 
-        column_config={
-            "Cena kat. EUR": st.column_config.NumberColumn("Cena EUR", format="%.2f €"),
-            "Cena kat. PLN": st.column_config.NumberColumn("Cena PLN", format="%.2f PLN"),
-            "Wartość Netto PLN": st.column_config.NumberColumn("Suma PLN", format="%.2f PLN"),
-        },
-        use_container_width=True, 
-        hide_index=True
-    )
+    st.dataframe(final_view, use_container_width=True, hide_index=True)
+    
+    # Extra info
+    col_info1, col_info2, col_info3 = st.columns(3)
+    with col_info1:
+        st.info(f"Całkowita waga przesyłki to **{total_weight:.2f} kg**.")
+    with col_info2:
+        st.success(f"**Transport:** Koszt dostawy: {shipping_pln:.0f} PLN.")
+    with col_info3:
+        st.info(f"Pozycje: {len(final_view)}")
