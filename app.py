@@ -109,7 +109,7 @@ if uploaded_file:
                 'Ilość na magazynie': s,
                 'Waga [kg]': w,
                 'Cena kat. EUR': p,
-                'Rabat %': 40.0
+                'Rabat %': 0
             })
             progress_bar.progress((i + 1) / total_items)
             time.sleep(random.uniform(0.5, 1.0))
