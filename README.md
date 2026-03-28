@@ -1,6 +1,6 @@
 # 🛠️ Kemmler B2B Offer Builder
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](TU_WKLEJ_TWOJ_LINK_DO_APLIKACJI)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://kemmler-calc.streamlit.app/)
 
 An automated tool designed to streamline the quoting process...
 
